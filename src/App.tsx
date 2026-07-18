@@ -4,12 +4,15 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { Heart, Settings, BookOpen, User, RotateCcw, Home, Plus, X, Lock, Play, CheckCircle, List, Upload, Gamepad, LayoutDashboard, LogOut, Printer } from 'lucide-react';
+import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, updateDoc , limit, onSnapshot, orderBy } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
+import { Calendar, Heart, Settings, BookOpen, User, RotateCcw, Home, Plus, X, Lock, Play, CheckCircle, List, Upload, Gamepad, LayoutDashboard, LogOut, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { pinyin } from 'pinyin-pro';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import html2pdf from 'html2pdf.js';
+import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile } from './features';
+
 
 
 export type Subject = 'chinese' | 'math' | 'science' | 'social_studies' | 'ket';
@@ -123,6 +126,7 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 
@@ -132,10 +136,12 @@ export function AdminDashboard() {
   const navigate = useNavigate();
 
   return (
-    <div className="max-w-6xl w-full mx-auto py-10 space-y-8">
+    <div className="max-w-[96%] w-full mx-auto py-10 space-y-8">
       <div className="flex justify-between items-end">
         <div>
-          <h2 className="font-serif text-3xl font-black text-[#4A3F35]">總指揮中心</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="font-serif text-3xl font-black text-[#4A3F35]">總指揮中心</h2>
+          </div>
           <p className="text-[#8C7A6B] mt-1">管理各科任務與題庫</p>
         </div>
       </div>
@@ -157,6 +163,12 @@ export function AdminDashboard() {
           </div>
         ))}
       </div>
+      <div className="mt-12">
+        <div className="flex items-center gap-2 mb-6">
+          <h2 className="font-serif text-2xl font-black text-[#4A3F35]">平台公告管理</h2>
+        </div>
+        <AnnouncementsAdminTab />
+      </div>
     </div>
   );
 }
@@ -165,8 +177,9 @@ export function AdminDashboard() {
 export function AdminSubjectView() {
   const { subjectId } = useParams<{ subjectId: Subject }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'tasks' | 'questions' | 'ai' | 'import' | 'settings' | 'attempts' | 'paper'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'questions' | 'ai' | 'import' | 'settings' | 'attempts' | 'paper' | 'materials'>('tasks');
   const [loading, setLoading] = useState(true);
+  const [adminMode, setAdminMode] = useState<'testing' | 'teaching'>('testing');
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -211,7 +224,7 @@ export function AdminSubjectView() {
   if (!subjectId) return null;
 
   return (
-    <div className="max-w-6xl w-full mx-auto py-10 space-y-6">
+    <div className="max-w-[96%] w-full mx-auto py-10 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-serif text-3xl font-black text-[#4A3F35]">{SUBJECT_LABELS[subjectId]} 管理中心</h2>
@@ -221,13 +234,30 @@ export function AdminSubjectView() {
         </button>
       </div>
 
-      <div className="flex space-x-2 border-b border-[#EAE6DF] overflow-x-auto pb-2">
-        <Tab btnTab="tasks" current={activeTab} set={setActiveTab as any} label="任務管理" icon={<List size={16} />} />
-        <Tab btnTab="questions" current={activeTab} set={setActiveTab as any} label="題庫一覽" icon={<BookOpen size={16} />} />
-        <Tab btnTab="import" current={activeTab} set={setActiveTab as any} label="匯入題庫" icon={<Upload size={16} />} />
-        <Tab btnTab="attempts" current={activeTab} set={setActiveTab as any} label="作答數據" icon={<CheckCircle size={16} />} />
-        <Tab btnTab="paper" current={activeTab} set={setActiveTab as any} label="紙本測驗" icon={<Printer size={16} />} />
-        <Tab btnTab="settings" current={activeTab} set={setActiveTab as any} label="科目設定" icon={<Settings size={16} />} />
+      <div className="flex flex-col space-y-4 border-b border-[#EAE6DF] pb-4">
+        <div className="flex bg-[#F5F5F0] p-1 rounded-xl w-fit border border-[#EAE6DF]">
+          <button onClick={() => { setAdminMode('teaching'); setActiveTab('materials'); }} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${adminMode === 'teaching' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#EAE6DF]'}`}>
+            📚 教學區
+          </button>
+          <button onClick={() => { setAdminMode('testing'); setActiveTab('tasks'); }} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${adminMode === 'testing' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#EAE6DF]'}`}>
+            📝 測驗區
+          </button>
+        </div>
+
+        {adminMode === 'testing' ? (
+          <div className="flex space-x-2 overflow-x-auto">
+            <Tab btnTab="tasks" current={activeTab} set={setActiveTab as any} label="任務管理" icon={<List size={16} />} />
+            <Tab btnTab="questions" current={activeTab} set={setActiveTab as any} label="題庫一覽" icon={<BookOpen size={16} />} />
+            <Tab btnTab="import" current={activeTab} set={setActiveTab as any} label="匯入題庫" icon={<Upload size={16} />} />
+            <Tab btnTab="attempts" current={activeTab} set={setActiveTab as any} label="作答數據" icon={<CheckCircle size={16} />} />
+            <Tab btnTab="paper" current={activeTab} set={setActiveTab as any} label="紙本測驗" icon={<Printer size={16} />} />
+            <Tab btnTab="settings" current={activeTab} set={setActiveTab as any} label="科目設定" icon={<Settings size={16} />} />
+          </div>
+        ) : (
+          <div className="flex space-x-2 overflow-x-auto">
+            <Tab btnTab="materials" current={activeTab} set={setActiveTab as any} label="教材編輯系統" icon={<BookOpen size={16} />} />
+          </div>
+        )}
       </div>
 
       <div className="bg-[#FDFBF7]/40 rounded-3xl p-6 border border-[#EAE6DF]">
@@ -240,6 +270,7 @@ export function AdminSubjectView() {
             {activeTab === 'attempts' && <AttemptsTab attempts={attempts} questions={questions} tasks={tasks} onRefresh={fetchData} />}
             {activeTab === 'paper' && <PaperTestTab questions={questions} attempts={attempts} subjectId={subjectId} />}
             {activeTab === 'settings' && <SettingsTab config={config} subjectId={subjectId} />}
+            {activeTab === 'materials' && <CourseMaterialsAdminTab subjectId={subjectId!} />}
           </>
         )}
       </div>
@@ -383,6 +414,16 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
   const toggleTaskActive = async (t: Task) => {
     await updateDoc(doc(db, 'tasks', t.id), { isActive: !t.isActive });
     onRefresh();
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    if (confirm('確定要刪除這個任務嗎？這將會連帶刪除所有該任務的測驗紀錄。')) {
+      await deleteDoc(doc(db, 'tasks', id));
+      const qSnapshot = await getDocs(query(collection(db, 'attempts'), where('taskId', '==', id)));
+      const deletePromises = qSnapshot.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+      onRefresh();
+    }
   };
 
   return (
@@ -539,6 +580,9 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
               <div className="flex items-center space-x-2">
                 <button onClick={() => toggleTaskActive(t)} className={`text-xs px-2 py-1 rounded font-bold ${t.isActive ? 'bg-[#8F9A8A] text-white' : 'bg-[#D5CFC4] text-[#8C7A6B]'}`}>
                   {t.isActive ? '進行中' : '已關閉'}
+                </button>
+                <button onClick={() => handleDeleteTask(t.id)} className="text-xs px-2 py-1 rounded font-bold bg-[#BC7665] text-white hover:bg-[#A35D4C]">
+                  刪除
                 </button>
               </div>
             </div>
@@ -2055,7 +2099,7 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
       </div>
 
       <header className="border-b border-[#EAE6DF]/80 bg-[#FDFBF7]/40 backdrop-blur-md sticky top-0 z-40 px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-[96%] mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('/')}>
             <div className="bg-gradient-to-tr from-purple-600 to-indigo-600 p-2 rounded-xl text-[#4A3F35] shadow-sm">
               <Gamepad size={20} />
@@ -2099,7 +2143,7 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
         </div>
       </header>
 
-      <main className="flex-grow flex flex-col px-4 py-6 z-10 max-w-7xl w-full mx-auto relative">
+      <main className="flex-grow flex flex-col px-4 py-6 z-10 max-w-[96%] w-full mx-auto relative">
         {children}
       </main>
     </div>
@@ -2193,14 +2237,25 @@ const SUBJECT_CONFIGS: { id: Subject; icon: string; color: string }[] = [
 
 export function SubjectSelect() {
   const navigate = useNavigate();
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(5));
+    const unsub = onSnapshot(q, (snap) => {
+      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
+    });
+    return unsub;
+  }, []);
+
 
   return (
-    <div className="max-w-4xl w-full mx-auto py-10">
+    <div className="max-w-[96%] w-full mx-auto py-10">
       <div className="text-center mb-10">
         <h2 className="font-serif text-3xl font-black text-[#4A3F35] mb-2">選擇探索星系 (科目)</h2>
         <p className="text-[#8C7A6B]">請選擇你今天要進行任務的科目</p>
       </div>
       
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {SUBJECT_CONFIGS.map(subj => (
           <div 
@@ -2218,6 +2273,32 @@ export function SubjectSelect() {
           </div>
         ))}
       </div>
+
+      {/* Announcements */}
+      <div className="mt-16">
+        <div className="flex items-center gap-2 mb-8">
+          <Calendar className="text-[#C2A878]" size={28} />
+          <h2 className="text-3xl font-bold text-[#4A3F35] font-serif">平台公告</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {announcements.map(a => (
+            <div key={a.id} className="bg-white border border-[#EAE6DF] rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="font-bold text-lg text-[#4A3F35] group-hover:text-[#B39969] transition-colors">{a.title}</h3>
+              </div>
+              <p className="text-[#8C7A6B] text-sm line-clamp-3 whitespace-pre-wrap">{a.content}</p>
+              <div className="mt-4 pt-4 border-t border-[#EAE6DF] flex justify-between text-xs text-[#A69B8F]">
+                <span>{a.author}</span>
+                <span>{new Date(a.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          ))}
+          {announcements.length === 0 && (
+            <div className="col-span-full text-center py-10 text-[#A69B8F]">目前沒有平台公告</div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }
@@ -2384,7 +2465,7 @@ export function TaskSelect({ user }: { user: UserProfile }) {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'tasks'|'mistakes'|'leaderboard'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks'|'mistakes'|'leaderboard'|'materials'>('tasks');
 
   useEffect(() => {
     if (!subjectId) return;
@@ -2408,146 +2489,104 @@ export function TaskSelect({ user }: { user: UserProfile }) {
   }, [subjectId]);
 
   return (
-    <div className="max-w-4xl w-full mx-auto py-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="text-3xl font-serif font-black text-[#4A3F35] flex items-center">
-            <Gamepad className="mr-3 w-8 h-8 text-[#C2A878]" />
-            學習儀表板
-          </h2>
-          <p className="text-[#8C7A6B] mt-2">選擇要挑戰的任務，或複習錯題本</p>
-        </div>
-        <button onClick={() => navigate('/select-subject')} className="text-[#A69B8F] hover:text-[#5A4F45]">
-          返回科目
+    <div className="max-w-[96%] w-full mx-auto py-10 space-y-8">
+      <GamificationProfile user={user} />
+      
+      <div className="flex bg-[#FDFBF7] p-1 rounded-xl w-full max-w-lg border border-[#EAE6DF]">
+        <button onClick={() => setActiveTab('materials')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'materials' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#F5F5F0]'}`}>
+          先看課 / 教材區
         </button>
-      </div>
-
-      <div className="flex space-x-2 bg-white border border-[#EAE6DF] p-1.5 rounded-xl shadow-sm mb-6 w-full max-w-md">
         <button onClick={() => setActiveTab('tasks')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'tasks' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#F5F5F0]'}`}>
-          我的任務
+          測驗任務
         </button>
         <button onClick={() => setActiveTab('mistakes')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'mistakes' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#F5F5F0]'}`}>
-          錯題本
+          錯題複習
         </button>
         <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'leaderboard' ? 'bg-[#C2A878] text-[#4A3F35] shadow-sm' : 'text-[#8C7A6B] hover:bg-[#F5F5F0]'}`}>
           排行榜
         </button>
       </div>
 
-      {activeTab === 'tasks' && (
-        loading ? (
-          <div className="text-center py-20 text-[#A69B8F]">載入中...</div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {tasks.map(t => (
-              <div 
-                key={t.id} 
-                onClick={() => navigate(`/play/${t.id}`)}
-                className="bg-white border border-[#EAE6DF] rounded-3xl p-6 cursor-pointer hover:border-[#C2A878] hover:-translate-y-1 transition-all group shadow-sm"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="font-serif text-xl font-bold text-[#4A3F35] group-hover:text-[#B39969] transition-colors">{t.title}</h3>
-                  <div className="bg-[#EAE2D3] text-[#B39969] p-2 rounded-xl">
-                    <Play size={20} className="fill-current" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <span className="text-xs font-bold bg-[#F5F5F0] text-[#8C7A6B] px-2 py-1 rounded">
-                    {t.difficulty === 'easy' ? '簡單' : t.difficulty === 'medium' ? '中等' : t.difficulty === 'hard' ? '困難' : '混合難度'}
-                  </span>
-                  <span className="text-xs font-bold bg-[#F5F5F0] text-[#8C7A6B] px-2 py-1 rounded">
-                    {t.gameMode === 'survival' ? '生存模式' : t.gameMode === 'speed' ? '速答模式' : '一般模式'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-[#A69B8F]">題數: {t.questionCount} {t.mcCount !== undefined ? `(選擇 ${t.mcCount}, 填空 ${t.fibCount})` : ""}</span>
-                  <div className="flex items-center text-[#BC7665]">
-                    {t.maxHearts ? (
-                      <>
-                        <Heart className="w-4 h-4 fill-current mr-1" />
-                        {t.maxHearts}
-                      </>
-                    ) : (
-                      <span className="text-[#8C7A6B]">無限愛心</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {tasks.length === 0 && (
-              <div className="col-span-full text-center py-20 text-[#A69B8F] bg-white border border-[#EAE6DF] rounded-3xl">
-                目前沒有可用的任務
-              </div>
-            )}
+      {activeTab === 'materials' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-end">
+            <div>
+              <button onClick={() => navigate('/select-subject')} className="text-[#A69B8F] hover:text-[#4A3F35] mb-2 flex items-center text-sm transition-colors">
+                ← 返回科目選擇
+              </button>
+              <h2 className="font-serif text-3xl font-black text-[#4A3F35]">課程內容與教材</h2>
+              <p className="text-[#8C7A6B] mt-1">在開始測驗前，先閱讀或觀看以下教材吧！</p>
+            </div>
           </div>
-        )
+          <CourseMaterialsStudentView subjectId={subjectId!} user={user} />
+        </div>
       )}
+
+      {activeTab === 'tasks' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-end">
+            <div>
+              <button onClick={() => navigate('/select-subject')} className="text-[#A69B8F] hover:text-[#4A3F35] mb-2 flex items-center text-sm transition-colors">
+                ← 返回科目選擇
+              </button>
+              <h2 className="font-serif text-3xl font-black text-[#4A3F35]">選擇任務</h2>
+              <p className="text-[#8C7A6B] mt-1">{SUBJECT_LABELS[subjectId!] || subjectId} - 點擊任務開始挑戰</p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-20 text-[#A69B8F]">尋找任務中...</div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {tasks.map(t => (
+                <div 
+                  key={t.id} 
+                  onClick={() => navigate(`/play/${t.id}`)}
+                  className="bg-white border border-[#EAE6DF] rounded-3xl p-6 cursor-pointer hover:border-[#C2A878] hover:-translate-y-1 transition-all group shadow-sm"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <h3 className="font-serif text-xl font-bold text-[#4A3F35] group-hover:text-[#B39969] transition-colors">{t.title}</h3>
+                    <div className="bg-[#EAE2D3] text-[#B39969] p-2 rounded-xl">
+                      <Play size={20} className="fill-current" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="text-xs font-bold bg-[#F5F5F0] text-[#8C7A6B] px-2 py-1 rounded">
+                      {t.difficulty === 'easy' ? '簡單' : t.difficulty === 'medium' ? '中等' : t.difficulty === 'hard' ? '困難' : '混合難度'}
+                    </span>
+                    <span className="text-xs font-bold bg-[#F5F5F0] text-[#8C7A6B] px-2 py-1 rounded">
+                      {t.gameMode === 'survival' ? '生存模式' : t.gameMode === 'speed' ? '速答模式' : '一般模式'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-[#A69B8F]">題數: {t.questionCount} {t.mcCount !== undefined ? `(選擇 ${t.mcCount}, 填空 ${t.fibCount})` : ""}</span>
+                    <div className="flex items-center text-[#BC7665]">
+                      {t.maxHearts ? (
+                        <>
+                          <Heart className="w-4 h-4 fill-current mr-1" />
+                          {t.maxHearts}
+                        </>
+                      ) : (
+                        <span className="text-[#8C7A6B]">無限愛心</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {tasks.length === 0 && (
+                <div className="col-span-full text-center py-20 text-[#A69B8F] bg-white border border-[#EAE6DF] rounded-3xl">
+                  目前沒有可用的任務
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'mistakes' && <MistakesTab user={user} />}
       {activeTab === 'leaderboard' && <LeaderboardTab user={user} />}
     </div>
   );
-}
-
-class ParticleEngine {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-  particles: any[];
-  animationId: number;
-
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d')!;
-    this.particles = [];
-    this.resize();
-    window.addEventListener('resize', this.resize);
-    this.animate = this.animate.bind(this);
-    this.animationId = requestAnimationFrame(this.animate);
-  }
-
-  resize = () => {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
-  };
-
-  createExplosion(x: number, y: number, color: string, count: number = 20) {
-    for (let i = 0; i < count; i++) {
-      this.particles.push({
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 10,
-        vy: (Math.random() - 0.5) * 10,
-        life: 1,
-        color,
-        size: Math.random() * 5 + 2
-      });
-    }
-  }
-
-  animate() {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life -= 0.02;
-      if (p.life <= 0) {
-        this.particles.splice(i, 1);
-        continue;
-      }
-      this.ctx.globalAlpha = p.life;
-      this.ctx.fillStyle = p.color;
-      this.ctx.beginPath();
-      this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-    this.ctx.globalAlpha = 1;
-    this.animationId = requestAnimationFrame(this.animate);
-  }
-
-  destroy() {
-    window.removeEventListener('resize', this.resize);
-    cancelAnimationFrame(this.animationId);
-  }
 }
 
 export function Gameplay({ user }: { user: UserProfile }) {
@@ -3137,7 +3176,7 @@ export default function App() {
     <Router>
       <Layout user={user}>
         <Routes>
-          <Route path="/" element={!user ? <SignIn /> : <Navigate to={user.role === 'admin' ? "/admin" : "/select-subject"} />} />
+          <Route path="/" element={!user ? <LandingPage /> : <Navigate to={user.role === 'admin' ? "/admin" : "/select-subject"} />} />
           
           {/* Player Routes */}
           <Route path="/select-subject" element={user ? <SubjectSelect /> : <Navigate to="/" />} />
