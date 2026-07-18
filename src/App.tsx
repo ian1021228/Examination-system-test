@@ -1169,6 +1169,11 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
         if (customClues.length > 0) clue = customClues.join(' / ');
       }
 
+      let mediaUrl = item.mediaUrl || item['多媒體連結'] || null;
+      let mediaType = item.mediaType || item['多媒體類型'] || (mediaUrl ? 'image' : undefined);
+      let explanation = item.explanation || item['詳解'] || null;
+      let subQuestions = item.subQuestions || item['子問題'] || null;
+
       await addDoc(collection(db, 'questions'), {
         subject: subjectId,
         unit: parseInt(String(itemUnit)) || 1,
@@ -1178,6 +1183,10 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
         options: options,
         correctAnswer: String(correctAnswer),
         clue: clue,
+        mediaUrl,
+        mediaType,
+        explanation,
+        subQuestions,
         createdAt: Date.now()
       } as Omit<Question, 'id'>);
       count++;
@@ -1241,10 +1250,10 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
     if (!textInput.trim()) return;
     setIsImporting(true);
     try {
-      const data = JSON.parse(textInput);
+      const data = parseRobustJSON(textInput);
       if (!Array.isArray(data)) throw new Error('內容必須是 JSON 陣列');
       
-      const promptsToDelete = data.map((item: any) => item.prompt).filter(Boolean);
+      const promptsToDelete = data.map((item: any) => item.prompt ? item.prompt.replace(/\[SOURCE_IMAGE\]/g, '') : '').filter(Boolean);
       if (promptsToDelete.length === 0) throw new Error('找不到要刪除的題目內容');
 
       const qSnapshot = await getDocs(query(collection(db, 'questions'), where('subject', '==', subjectId)));
