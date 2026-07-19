@@ -19,6 +19,13 @@ export interface Announcement {
   createdAt: number;
 }
 
+export interface HighlightItem {
+  text: string;
+  color: string;
+  createdAt: number;
+  comment?: string;
+}
+
 export interface MaterialProgress {
   id?: string;
   userId: string;
@@ -27,7 +34,7 @@ export interface MaterialProgress {
   completed: boolean;
   timeSpent: number;
   notes: string;
-  highlights: string[];
+  highlights?: HighlightItem[];
   lastUpdated: number;
 }
 
@@ -765,6 +772,34 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                                   <p className="text-[11px] text-gray-400">目前無個人筆記</p>
                                 </div>
                               )}
+
+                              {record?.highlights && record.highlights.length > 0 && (
+                                <div className="mt-2.5 p-3.5 bg-yellow-50/50 border border-yellow-100/80 rounded-xl relative">
+                                  <div className="text-[10px] text-yellow-600 font-bold mb-1.5 flex items-center gap-1">
+                                    <span>💡 學生劃線重點 ({record.highlights.length})：</span>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {record.highlights.map((h, hIdx) => (
+                                      <div key={hIdx} className="text-[11px] text-gray-700 bg-white border border-gray-200/60 p-2.5 rounded-xl">
+                                        <div className="flex items-center gap-1.5 mb-1 text-[10px] text-gray-400 font-bold">
+                                          <span className={`w-1.5 h-1.5 rounded-full ${
+                                            h.color === 'yellow' ? 'bg-yellow-400' :
+                                            h.color === 'green' ? 'bg-green-400' :
+                                            h.color === 'blue' ? 'bg-blue-400' : 'bg-pink-400'
+                                          }`} />
+                                          <span className="uppercase">{h.color === 'yellow' ? '黃色標記' : h.color === 'green' ? '綠色標記' : h.color === 'blue' ? '藍色標記' : '粉色標記'}</span>
+                                        </div>
+                                        <p className="italic font-medium leading-relaxed">"{h.text}"</p>
+                                        {h.comment && (
+                                          <p className="mt-1.5 pl-2 border-l-2 border-indigo-500/30 text-gray-500 text-[10px] leading-normal font-normal">
+                                            ✍️ 學生備註：{h.comment}
+                                          </p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -832,12 +867,30 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                                 <td className="py-2.5 font-mono text-gray-600">{formatTimeSpent(r?.timeSpent || 0)}</td>
                                 <td className="py-2.5 max-w-md">
                                   {r?.notes ? (
-                                    <div className="bg-amber-50/40 p-2 rounded border border-amber-100/60 text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap" title={r.notes}>
+                                    <div className="bg-amber-50/40 p-2 rounded border border-amber-100/60 text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap mb-1.5" title={r.notes}>
                                       {r.notes}
                                     </div>
-                                  ) : (
+                                  ) : null}
+                                  {r?.highlights && r.highlights.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {r.highlights.map((h, hIdx) => (
+                                        <span 
+                                          key={hIdx} 
+                                          className={`text-[9px] px-1.5 py-0.5 rounded-full border truncate max-w-[120px] font-medium inline-block ${
+                                            h.color === 'yellow' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
+                                            h.color === 'green' ? 'bg-green-50 border-green-200 text-green-700' :
+                                            h.color === 'blue' ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                                            'bg-pink-50 border-pink-200 text-pink-700'
+                                          }`} 
+                                          title={`"${h.text}"${h.comment ? ` (備註: ${h.comment})` : ''}`}
+                                        >
+                                          💡 {h.text}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : !r?.notes ? (
                                     <span className="text-gray-300 italic">無</span>
-                                  )}
+                                  ) : null}
                                 </td>
                               </tr>
                             );
@@ -887,7 +940,7 @@ export function DiscussionBoard({ subjectId, user }: { subjectId: string, user: 
     <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-sm border border-gray-100">
       <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3"><MessageCircle className="text-indigo-500"/> 科目討論版</h2>
       <div className="mb-8 flex gap-3">
-        <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold shrink-0">{user.displayName[0]}</div>
+        <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold shrink-0">{user.displayName ? user.displayName[0] : 'U'}</div>
         <div className="flex-grow">
           <textarea value={newPost} onChange={e => setNewPost(e.target.value)} placeholder="有什麼問題想討論嗎？" className="w-full border border-gray-200 rounded-xl p-4 min-h-[100px] focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"/>
           <div className="flex justify-end mt-3">
@@ -899,7 +952,7 @@ export function DiscussionBoard({ subjectId, user }: { subjectId: string, user: 
         {posts.map(post => (
           <div key={post.id} className="border border-gray-100 rounded-2xl p-6 bg-gray-50/50">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-700 font-bold text-sm">{post.authorName[0]}</div>
+              <div className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-700 font-bold text-sm">{post.authorName ? post.authorName[0] : 'U'}</div>
               <div>
                 <span className="font-bold text-gray-900 text-sm block">{post.authorName}</span>
                 <span className="text-xs text-gray-500">{new Date(post.createdAt).toLocaleString()}</span>
@@ -922,6 +975,11 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
   const [progressData, setProgressData] = useState<Record<string, MaterialProgress>>({});
   const [notesText, setNotesText] = useState('');
   const [fontSize, setFontSize] = useState<number>(16);
+
+  const markdownRef = useRef<HTMLDivElement>(null);
+  const fullscreenMarkdownRef = useRef<HTMLDivElement>(null);
+
+
 
   // 1. 監聽教材進度 (監聽符合 userId 與 subjectId 的 material_progress)
   useEffect(() => {
@@ -1166,11 +1224,12 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
           )}
 
           {activeMat.markdownNotes && (
-            <div className="relative mt-8">
+            <div className="relative mt-8 text-left">
               <button onClick={toggleTTS} className="absolute -top-16 right-0 bg-indigo-50 text-indigo-600 px-5 py-2.5 rounded-full font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors shadow-sm">
                 {isPlayingTTS ? <><VolumeX size={18}/> 停止朗讀</> : <><Volume2 size={18}/> 語音朗讀</>}
               </button>
               <div 
+                ref={fullscreenMarkdownRef}
                 className="prose prose-lg prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700"
                 style={{ fontSize: `${fontSize}px`, lineHeight: '1.75' }}
               >
@@ -1196,7 +1255,7 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
           )}
 
           {/* 全螢幕下的個人筆記區塊 */}
-          <div className="mt-16 pt-10 border-t border-gray-100">
+          <div className="mt-16 pt-10 border-t border-gray-100 text-left">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Edit2 size={20} className="text-indigo-500"/> 個人筆記 📝
@@ -1334,11 +1393,12 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
             )}
             
             {activeMat.markdownNotes && (
-              <div className="relative mt-12">
+              <div className="relative mt-12 text-left">
                 <button onClick={toggleTTS} className="absolute -top-12 right-0 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
                   {isPlayingTTS ? <><VolumeX size={18}/> 停止朗讀</> : <><Volume2 size={18}/> 語音朗讀</>}
                 </button>
                 <div 
+                  ref={markdownRef}
                   className="prose prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 bg-gray-50/50 p-8 rounded-2xl border border-gray-100"
                   style={{ fontSize: `${fontSize}px`, lineHeight: '1.75' }}
                 >
@@ -1364,7 +1424,7 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
             )}
 
             {/* 個人筆記區塊 */}
-            <div className="mt-12 pt-10 border-t border-gray-100">
+            <div className="mt-12 pt-10 border-t border-gray-100 text-left">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Edit2 size={18} className="text-indigo-500"/> 個人筆記 📝
@@ -1399,6 +1459,8 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
           </div>
         )}
       </div>
+
+
     </div>
   );
 }
