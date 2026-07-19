@@ -3,7 +3,7 @@ import { toast } from "./toast";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, updateDoc , limit, onSnapshot, orderBy } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Calendar, Heart, Settings, BookOpen, User, RotateCcw, Home, Plus, X, Lock, Play, CheckCircle, List, Upload, Gamepad, LayoutDashboard, LogOut, Printer } from 'lucide-react';
@@ -12,18 +12,18 @@ import { pinyin } from 'pinyin-pro';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import html2pdf from 'html2pdf.js';
 import { ParticleEngine } from './ParticleEngine';
-import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile } from './features';
+import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile, Leaderboard, XPShop } from './features';
 
 
 
-export type Subject = 'chinese' | 'math' | 'science' | 'social_studies' | 'ket';
+export type Subject = 'chinese' | 'math' | 'science' | 'social_studies' | 'pet';
 
 export const SUBJECT_LABELS: Record<Subject, string> = {
   chinese: '國語',
   math: '數學',
   science: '自然',
   social_studies: '社會',
-  ket: 'KET 英文'
+  pet: 'PET 英文'
 };
 
 export interface SubQuestion {
@@ -104,10 +104,16 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'admin' | 'player';
+  role: 'admin' | 'player' | 'observer';
   points?: number;
   badges?: string[];
   lastPlayedAt?: number;
+  lastLoginDate?: string;
+  streak?: number;
+  unlockedFrames?: string[];
+  activeFrame?: string;
+  unlockedThemes?: string[];
+  activeTheme?: string;
 }
 
 export interface SubjectConfig {
@@ -2022,6 +2028,29 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
   const location = useLocation();
 
   useEffect(() => {
+    let keySequence = '';
+    const keys = new Set<string>();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+        return;
+      }
+      if (e.key) keys.add(e.key.toLowerCase());
+      if (keys.has('i') && keys.has('a') && keys.has('n')) {
+        navigate('/');
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key) keys.delete(e.key.toLowerCase());
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
     // Particle effect
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2094,9 +2123,9 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
             </div>
             <div>
               <h1 className="font-serif font-black text-lg tracking-wider bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
-                全科星際航行系統
+                DevSeed 課業進化站
               </h1>
-              <p className="text-xs text-[#8C7A6B]">Quest Analytics Platform</p>
+              <p className={`text-xs ${user?.activeTheme === 'theme_dark' ? 'text-gray-400' : 'text-[#8C7A6B]'}`}></p>
             </div>
           </div>
 
@@ -2112,17 +2141,31 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
                   <Home size={14} className="mr-1" /> 任務大廳
                 </button>
               )}
+              {user.role === 'player' && (
+                <>
+                  
+                  
+                </>
+              )}
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-semibold text-[#5A4F45]">{user.displayName}</p>
                 <p className="text-xs text-[#B39969] font-mono uppercase">ROLE: {user.role}</p>
               </div>
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="Avatar" className="w-9 h-9 rounded-full border-2 border-purple-500 bg-white object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-9 h-9 rounded-full border-2 border-purple-500 bg-white flex items-center justify-center font-bold text-[#4A3F35] uppercase">
-                  {user.displayName[0]}
-                </div>
-              )}
+              {(() => {
+                const frameClass = 
+                  user.activeFrame === 'frame_gold' ? 'border-yellow-400 border-4 shadow-[0_0_10px_rgba(250,204,21,0.5)]' :
+                  user.activeFrame === 'frame_diamond' ? 'border-cyan-400 border-4 shadow-[0_0_15px_rgba(34,211,238,0.6)]' :
+                  user.activeFrame === 'frame_fire' ? 'border-red-500 border-4 shadow-[0_0_20px_rgba(239,68,68,0.8)]' :
+                  'border-purple-500 border-2';
+                  
+                return user.photoURL ? (
+                  <img src={user.photoURL} alt="Avatar" className={`w-10 h-10 rounded-full bg-white object-cover ${frameClass}`} referrerPolicy="no-referrer" />
+                ) : (
+                  <div className={`w-10 h-10 rounded-full bg-white flex items-center justify-center font-bold text-[#4A3F35] uppercase ${frameClass}`}>
+                    {user.displayName[0]}
+                  </div>
+                );
+              })()}
               <button onClick={handleLogout} className="text-[#8C7A6B] hover:text-[#BC7665] text-sm p-2 transition-colors" title="登出">
                 <LogOut size={18} />
               </button>
@@ -2140,16 +2183,47 @@ export function Layout({ children, user }: { children: React.ReactNode, user: Us
 
 export function SignIn() {
   const [testCode, setTestCode] = useState('');
-
-  const handleLogin = async () => {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState('');
+  
+  const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (e) {
       console.error(e);
-      toast('登入失敗，請稍後再試。');
+      toast('Google登入失敗，請稍後再試。');
     }
   };
 
+  const handleEmailAuth = async () => {
+    if (!email || !password) return toast('請輸入信箱與密碼');
+    if (isRegistering && !nickname) return toast('請輸入暱稱');
+    
+    try {
+      if (isRegistering) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: nickname });
+        // The onAuthStateChanged listener will handle creating the user doc
+        toast('註冊成功！');
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast('登入成功！');
+      }
+    } catch (e: any) {
+      console.error(e);
+      if (e.code === 'auth/invalid-credential') {
+        toast('登入失敗：帳號或密碼錯誤');
+      } else if (e.code === 'auth/email-already-in-use') {
+        toast('註冊失敗：此信箱已被使用');
+      } else {
+        toast(isRegistering ? '註冊失敗: ' + e.message : '登入失敗: ' + e.message);
+      }
+    }
+  };
+
+  
   const handleTestSubmit = async () => {
     if (testCode === 'ianw0000') {
       try {
@@ -2169,42 +2243,73 @@ export function SignIn() {
 
   return (
     <div className="max-w-md w-full mx-auto text-center py-10 my-auto">
-      <div className="bg-[#FDFBF7]/60 backdrop-blur-xl border border-[#EAE6DF] rounded-3xl p-8 shadow-lg relative overflow-hidden neon-border">
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#C2A878]/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-indigo-600/10 rounded-full blur-3xl"></div>
+      <div className="bg-[#FDFBF7]/80 backdrop-blur-xl border border-[#EAE6DF] rounded-3xl p-8 shadow-2xl relative overflow-hidden">
         <div className="w-20 h-20 bg-gradient-to-tr from-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm shadow-[#C2A878]/20 transform hover:scale-105 transition-transform duration-300">
           <span className="text-4xl">🚀</span>
         </div>
-        <h2 className="font-serif text-2xl font-black tracking-wide text-[#4A3F35]">開啟星際全科冒險</h2>
-        <p className="text-sm text-[#8C7A6B] mt-2 mb-8">登入後系統將根據身分自動分流至遊戲區或考情管理後台。</p>
+        <h2 className="font-serif text-2xl font-black tracking-wide text-[#4A3F35]">登入 DevSeed 課業進化站</h2>
+        <p className="text-sm text-[#8C7A6B] mt-2 mb-6">加入我們，解鎖你的學習潛能。</p>
+
+        <div className="space-y-4 mb-6 text-left">
+          {isRegistering && (
+            <div>
+              <label className="text-xs font-bold text-[#8C7A6B] ml-1">暱稱 (必填)</label>
+              <input type="text" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="你的大名" className="w-full mt-1 bg-white border border-[#EAE6DF] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" />
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-bold text-[#8C7A6B] ml-1">信箱 (必填)</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="example@email.com" className="w-full mt-1 bg-white border border-[#EAE6DF] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" />
+          </div>
+          <div>
+              <label className="text-xs font-bold text-[#8C7A6B] ml-1">密碼</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full mt-1 bg-white border border-[#EAE6DF] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" />
+            </div>
+          
+          <button onClick={handleEmailAuth} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-md mt-2">
+              {isRegistering ? '註冊帳號' : '登入帳號'}
+            </button>
+
+          <div className="flex justify-between items-center px-1">
+               <button onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold">
+                 {isRegistering ? '已有帳號？切換登入' : '沒有帳號？立即註冊'}
+               </button>
+             </div>
+        </div>
+
+        <div className="relative flex py-4 items-center mb-2">
+            <div className="flex-grow border-t border-[#EAE6DF]"></div>
+            <span className="flex-shrink-0 mx-4 text-[#A69B8F] text-xs font-bold uppercase tracking-wider">或</span>
+            <div className="flex-grow border-t border-[#EAE6DF]"></div>
+        </div>
 
         <button 
-          onClick={handleLogin}
-          className="w-full flex items-center justify-center space-x-3 bg-white hover:bg-gray-100 text-gray-900 font-bold py-3.5 px-6 rounded-2xl shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] mb-6"
+          onClick={handleGoogleLogin}
+          className="w-full flex items-center justify-center space-x-3 bg-white hover:bg-gray-50 text-gray-900 border border-[#EAE6DF] font-bold py-3 px-6 rounded-2xl shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] mb-6"
         >
-          <svg className="w-6 h-6" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
-          <span>Google 帳號快速登入</span>
+          <span className="text-sm">使用 Google 帳號</span>
         </button>
 
-        <div className="border-t border-[#EAE6DF] pt-6 mt-2">
-          <p className="text-xs text-[#A69B8F] mb-3">或輸入測試碼進入開發模式</p>
+        <div className="border-t border-[#EAE6DF] pt-4 mt-2">
+          <p className="text-[10px] text-[#A69B8F] mb-2 uppercase tracking-wide">系統管理員通道</p>
           <div className="flex space-x-2">
             <input 
               type="password" 
               value={testCode}
               onChange={e => setTestCode(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleTestSubmit()}
-              placeholder="輸入測試碼" 
-              className="flex-1 bg-[#F5F5F0] border border-[#D5CFC4] rounded-xl px-4 py-2 text-sm text-center text-[#B39969] focus:outline-none focus:border-purple-500"
+              placeholder="輸入授權碼" 
+              className="flex-1 bg-[#F5F5F0] border border-[#D5CFC4] rounded-xl px-3 py-1.5 text-xs text-center text-[#B39969] focus:outline-none focus:border-purple-500"
             />
             <button 
               onClick={handleTestSubmit}
-              className="bg-white hover:bg-[#EAE6DF] text-[#4A3F35] px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+              className="bg-white hover:bg-[#EAE6DF] text-[#4A3F35] border border-[#EAE6DF] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
             >
               進入
             </button>
@@ -2220,7 +2325,7 @@ const SUBJECT_CONFIGS: { id: Subject; icon: string; color: string }[] = [
   { id: 'math', icon: '📐', color: 'from-blue-500 to-cyan-500' },
   { id: 'science', icon: '🔬', color: 'from-green-500 to-emerald-500' },
   { id: 'social_studies', icon: '🌍', color: 'from-amber-500 to-yellow-500' },
-  { id: 'ket', icon: '🔤', color: 'from-purple-500 to-pink-500' }
+  { id: 'pet', icon: '🔤', color: 'from-purple-500 to-pink-500' }
 ];
 
 export function SubjectSelect() {
@@ -2228,10 +2333,12 @@ export function SubjectSelect() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(5));
+    const q = query(collection(db, 'announcements'));
     const unsub = onSnapshot(q, (snap) => {
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
-    });
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement));
+      data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setAnnouncements(data.slice(0, 5));
+    }, (err) => console.warn("Snapshot error:", err));
     return unsub;
   }, []);
 
@@ -2968,7 +3075,7 @@ export function Gameplay({ user }: { user: UserProfile }) {
         
         {currentQ.clue && (
           <p className="text-sm text-[#8C7A6B] bg-[#F5F5F0]/40 py-2 px-4 rounded-xl border border-[#EAE6DF]/40 inline-block mb-6">
-            提示: {task.subject === 'ket' ? currentQ.clue.split(' / ')[0] : currentQ.clue}
+            提示: {task.subject === 'pet' ? currentQ.clue.split(' / ')[0] : currentQ.clue}
           </p>
         )}
 
@@ -3135,8 +3242,14 @@ export default function App() {
         const userSnap = await getDoc(userRef);
         
         let profile: UserProfile;
+        let needsUpdate = false;
+        
         if (userSnap.exists()) {
           profile = userSnap.data() as UserProfile;
+          if ((firebaseUser.email === 'ianw.solar@gmail.com' || firebaseUser.isAnonymous) && profile.role !== 'admin') {
+            profile.role = 'admin';
+            needsUpdate = true;
+          }
         } else {
           // New user, default to player
           profile = {
@@ -3144,10 +3257,41 @@ export default function App() {
             email: firebaseUser.email || '',
             displayName: firebaseUser.isAnonymous ? '測試管理員' : (firebaseUser.displayName || 'Unknown Player'),
             photoURL: firebaseUser.photoURL || '',
-            role: (firebaseUser.email === 'ianw.solar@gmail.com' || firebaseUser.isAnonymous) ? 'admin' : 'player'
+            role: (firebaseUser.email === 'ianw.solar@gmail.com' || firebaseUser.isAnonymous) ? 'admin' : 'player',
+            points: 0,
+            badges: [],
+            streak: 0,
+            unlockedFrames: ['default'],
+            activeFrame: 'default'
           };
-          await setDoc(userRef, profile);
+          needsUpdate = true;
         }
+        
+        // Daily Check-in & Streak Logic
+        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local time
+        const yesterdayDate = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+        
+        if (profile.lastLoginDate !== today) {
+          if (profile.lastLoginDate === yesterdayDate) {
+             profile.streak = (profile.streak || 0) + 1;
+          } else {
+             profile.streak = 1;
+          }
+          profile.lastLoginDate = today;
+          
+          // Reward XP
+          profile.points = (profile.points || 0) + 50 + (profile.streak > 1 ? 10 : 0); // 50 daily + 10 streak bonus
+          if (profile.streak >= 7 && !(profile.badges || []).includes('streak_7')) {
+             profile.badges = [...(profile.badges || []), 'streak_7'];
+          }
+          
+          needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+           await setDoc(userRef, profile, { merge: true });
+        }
+        
         setUser(profile);
       } else {
         setUser(null);
@@ -3172,12 +3316,15 @@ export default function App() {
       <Layout user={user}>
         <Routes>
           <Route path="/" element={!user ? <LandingPage /> : <Navigate to={user.role === 'admin' ? "/admin" : "/select-subject"} />} />
+          <Route path="/signin" element={!user ? <div className="min-h-screen flex flex-col pt-10 px-4"><SignIn /></div> : <Navigate to="/" />} />
           
           {/* Player Routes */}
           <Route path="/select-subject" element={user ? <SubjectSelect /> : <Navigate to="/" />} />
           <Route path="/subject/:subjectId/tasks" element={user ? <TaskSelect user={user} /> : <Navigate to="/" />} />
           <Route path="/play/:taskId" element={user ? <Gameplay user={user} /> : <Navigate to="/" />} />
           <Route path="/gameover/:attemptId" element={user ? <GameOver /> : <Navigate to="/" />} />
+          <Route path="/leaderboard" element={user ? <Leaderboard user={user} /> : <Navigate to="/" />} />
+          <Route path="/shop" element={user ? <XPShop user={user} setUser={setUser} /> : <Navigate to="/" />} />
           
           {/* Admin Routes */}
           <Route path="/admin" element={user && user.role === 'admin' ? <AdminDashboard /> : <Navigate to="/" />} />
