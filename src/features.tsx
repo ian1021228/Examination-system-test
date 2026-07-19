@@ -6,7 +6,7 @@ import { ref, uploadBytes, getDownloadURL, uploadBytesResumable, UploadTask } fr
 import Markdown from 'react-markdown';
 import type { UserProfile, Subject } from './App';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ChevronLeft, BookOpen, Video, FileText, MessageCircle, Send, Award, Trash, Star, Play, CheckCircle, ChevronRight, Layout, Info, User, Volume2, VolumeX, Calendar, Paperclip, Download, Plus, X, Upload, ShoppingCart, Trophy, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, BookOpen, Video, FileText, MessageCircle, Send, Award, Trash, Star, Play, CheckCircle, ChevronRight, Layout, Info, User, Volume2, VolumeX, Calendar, Paperclip, Download, Plus, X, Upload, ShoppingCart, Trophy, Lock, Unlock , Edit2} from 'lucide-react';
 import { toast } from './toast';
 import { googleSignIn, getAccessToken } from './auth';
 import { confirmModal } from './confirm';
@@ -303,6 +303,7 @@ export function AnnouncementsAdminTab() {
 export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newMat, setNewMat] = useState<Partial<CourseMaterial>>({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
 
   const fetchMaterials = async () => {
@@ -315,12 +316,23 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
 
   useEffect(() => { fetchMaterials(); }, [subjectId]);
 
+  const handleEdit = (m: CourseMaterial) => {
+    setNewMat(m);
+    setEditingId(m.id || null);
+    setShowForm(true);
+  };
+
   const handleSave = async () => {
     if (!newMat.title) return;
     try {
-      const mat = { ...newMat, subjectId, createdAt: Date.now() };
-      await addDoc(collection(db, 'materials'), mat);
+      const mat = { ...newMat, subjectId, createdAt: newMat.createdAt || Date.now() };
+      if (editingId) {
+        await updateDoc(doc(db, 'materials', editingId), mat);
+      } else {
+        await addDoc(collection(db, 'materials'), mat);
+      }
       setShowForm(false);
+      setEditingId(null);
       setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
       fetchMaterials();
     } catch (e) {
@@ -333,11 +345,26 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
     fetchMaterials();
   };
 
+  const groupedMaterials = materials.reduce((acc, curr) => {
+    const unit = curr.unit || 1;
+    if (!acc[unit]) acc[unit] = [];
+    acc[unit].push(curr);
+    return acc;
+  }, {} as Record<number, CourseMaterial[]>);
+
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
       <div className="flex justify-between items-center mb-6">
         <h2 className="font-bold text-2xl text-gray-900">課程教材管理</h2>
-        <button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-2">
+        <button onClick={() => {
+          if (showForm) {
+            setShowForm(false);
+            setEditingId(null);
+            setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
+          } else {
+            setShowForm(true);
+          }
+        }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-2">
           {showForm ? '取消' : <><Upload size={18}/> 新增教材</>}
         </button>
       </div>
@@ -400,23 +427,35 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
             <label className="text-sm font-bold text-gray-700">Markdown 課程筆記</label>
             <textarea value={newMat.markdownNotes} onChange={e => setNewMat({...newMat, markdownNotes: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 h-32" placeholder="支援 Markdown 語法..."/>
           </div>
-          <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold w-full hover:bg-indigo-700">儲存教材</button>
+          <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold w-full hover:bg-indigo-700">{editingId ? '更新教材' : '儲存教材'}</button>
         </div>
       )}
 
       <div className="space-y-4">
-        {materials.map(m => (
-          <div key={m.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold">{m.unit}</div>
-              <div>
-                <h3 className="font-bold text-gray-900">{m.title}</h3>
-                <span className="text-xs text-gray-500 uppercase tracking-wide">{m.type}</span>
-              </div>
+        
+        {Object.entries(groupedMaterials).map(([unit, mats]) => (
+          <div key={unit} className="mb-8">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Unit {unit}</h3>
+            <div className="space-y-3">
+              {mats.map(m => (
+                <div key={m.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold">{m.unit}</div>
+                    <div>
+                      <h4 className="font-bold text-gray-900">{m.title}</h4>
+                      <span className="text-xs text-gray-500 uppercase tracking-wide">{m.type}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleEdit(m)} className="text-indigo-500 hover:bg-indigo-50 p-2 rounded-lg"><Edit2 size={18}/></button>
+                    <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash size={18}/></button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash size={18}/></button>
           </div>
         ))}
+
       </div>
     </div>
   );
@@ -524,6 +563,14 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     return url;
   };
 
+
+  const groupedMaterials = materials.reduce((acc, curr) => {
+    const unit = curr.unit || 1;
+    if (!acc[unit]) acc[unit] = [];
+    acc[unit].push(curr);
+    return acc;
+  }, {} as Record<number, CourseMaterial[]>);
+
   if (isFullscreen && activeMat) {
     return createPortal(
       <div className="fixed inset-0 z-[100] bg-white overflow-y-auto">
@@ -581,19 +628,28 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     <div className="flex flex-col lg:flex-row gap-8 min-h-[70vh]">
       <div className="lg:w-1/3 space-y-4">
         <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3"><BookOpen className="text-indigo-500"/> 課程章節</h2>
-        {materials.map(m => (
-          <button key={m.id} onClick={() => { setActiveMat(m); window.speechSynthesis.cancel(); setIsPlayingTTS(false); }} className={`w-full text-left p-5 rounded-2xl border transition-all ${activeMat?.id === m.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-[1.02]' : 'bg-white border-gray-100 text-gray-700 hover:border-indigo-200 hover:shadow-md'}`}>
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${activeMat?.id === m.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
-                {m.unit}
-              </div>
-              <div>
-                <div className="font-bold line-clamp-1">{m.title}</div>
-                <div className={`text-xs mt-1 uppercase tracking-wider ${activeMat?.id === m.id ? 'text-indigo-100' : 'text-gray-400'}`}>{m.type}</div>
-              </div>
+        
+        {Object.entries(groupedMaterials).map(([unit, mats]) => (
+          <div key={unit} className="mb-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">Unit {unit}</h3>
+            <div className="space-y-3">
+              {mats.map(m => (
+                <button key={m.id} onClick={() => { setActiveMat(m); window.speechSynthesis.cancel(); setIsPlayingTTS(false); }} className={`w-full text-left p-4 rounded-xl border transition-all ${activeMat?.id === m.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-[1.02]' : 'bg-white border-gray-100 text-gray-700 hover:border-indigo-200 hover:shadow-md'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${activeMat?.id === m.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                      {m.unit}
+                    </div>
+                    <div>
+                      <div className="font-bold line-clamp-1 text-sm">{m.title}</div>
+                      <div className={`text-xs mt-1 uppercase tracking-wider ${activeMat?.id === m.id ? 'text-indigo-100' : 'text-gray-400'}`}>{m.type}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
-          </button>
+          </div>
         ))}
+
       </div>
       <div className="lg:w-2/3">
         {activeMat ? (
