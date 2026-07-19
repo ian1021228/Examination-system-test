@@ -6,7 +6,7 @@ import { ref, uploadBytes, getDownloadURL, uploadBytesResumable, UploadTask } fr
 import Markdown from 'react-markdown';
 import type { UserProfile, Subject } from './App';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ChevronLeft, BookOpen, Video, FileText, MessageCircle, Send, Award, Trash, Star, Play, CheckCircle, ChevronRight, Layout, Info, User, Volume2, VolumeX, Calendar, Paperclip, Download, Plus, X, Upload, ShoppingCart, Trophy, Lock, Unlock , Edit2} from 'lucide-react';
+import { ChevronLeft, BookOpen, Video, FileText, MessageCircle, Send, Award, Trash, Star, Play, CheckCircle, ChevronRight, Layout, Info, User, Volume2, VolumeX, Calendar, Paperclip, Download, Plus, X, Upload, ShoppingCart, Trophy, Lock, Unlock , Edit2, GripVertical} from 'lucide-react';
 import { toast } from './toast';
 import { googleSignIn, getAccessToken } from './auth';
 import { confirmModal } from './confirm';
@@ -305,12 +305,17 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newMat, setNewMat] = useState<Partial<CourseMaterial>>({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const fetchMaterials = async () => {
     const q = query(collection(db, 'materials'), where('subjectId', '==', subjectId));
     const snap = await getDocs(q);
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as CourseMaterial));
-    data.sort((a, b) => a.unit - b.unit);
+    data.sort((a, b) => {
+      if (a.unit !== b.unit) return a.unit - b.unit;
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0);
+    });
     setMaterials(data);
   };
 
@@ -322,10 +327,72 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
     setShowForm(true);
   };
 
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    if (draggedId !== id) {
+      setDragOverId(id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+    if (!draggedId || draggedId === targetId) return;
+
+    const draggedMat = materials.find(m => m.id === draggedId);
+    const targetMat = materials.find(m => m.id === targetId);
+    if (!draggedMat || !targetMat) return;
+
+    const updatedMats = [...materials];
+    const draggedIndex = updatedMats.findIndex(m => m.id === draggedId);
+    
+    // 移除被拖曳的
+    updatedMats.splice(draggedIndex, 1);
+    
+    // 如果拖曳到不同的單元，將單元改為目標單元
+    draggedMat.unit = targetMat.unit;
+
+    // 重新塞入到目標位置
+    const targetIndex = updatedMats.findIndex(m => m.id === targetId);
+    updatedMats.splice(targetIndex, 0, draggedMat);
+
+    try {
+      const batchPromises = updatedMats.map((m, index) => {
+        const ref = doc(db, 'materials', m.id!);
+        return updateDoc(ref, {
+          unit: m.unit,
+          sortOrder: index
+        });
+      });
+      await Promise.all(batchPromises);
+      toast("↕️ 教材排序更新成功！");
+      fetchMaterials();
+    } catch (error) {
+      console.error(error);
+      toast("❌ 儲存順序失敗");
+    }
+
+    setDraggedId(null);
+  };
+
   const handleSave = async () => {
     if (!newMat.title) return;
     try {
-      const mat = { ...newMat, subjectId, createdAt: newMat.createdAt || Date.now() };
+      const mat = { 
+        ...newMat, 
+        subjectId, 
+        createdAt: newMat.createdAt || Date.now(),
+        sortOrder: newMat.sortOrder !== undefined ? newMat.sortOrder : materials.length
+      };
       if (editingId) {
         await updateDoc(doc(db, 'materials', editingId), mat);
       } else {
@@ -445,21 +512,45 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
           <div key={unit} className="mb-8">
             <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Unit {unit}</h3>
             <div className="space-y-3">
-              {mats.map(m => (
-                <div key={m.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold">{m.unit}</div>
-                    <div>
-                      <h4 className="font-bold text-gray-900">{m.title}</h4>
-                      <span className="text-xs text-gray-500 uppercase tracking-wide">{m.type}</span>
+              {mats.map(m => {
+                const isBeingDragged = draggedId === m.id;
+                const isDragOver = dragOverId === m.id;
+                return (
+                  <div 
+                    key={m.id} 
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, m.id!)}
+                    onDragOver={(e) => handleDragOver(e, m.id!)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, m.id!)}
+                    className={`flex justify-between items-center p-4 border rounded-xl transition-all duration-200 select-none ${
+                      isBeingDragged 
+                        ? 'opacity-40 border-dashed border-indigo-300 bg-indigo-50/30 cursor-grabbing' 
+                        : isDragOver
+                          ? 'border-indigo-500 bg-indigo-50/40 scale-[1.01] shadow-md cursor-grabbing'
+                          : 'border-gray-100 hover:border-indigo-200 hover:shadow-sm bg-white cursor-grab'
+                    }`}
+                    title="按住並拖曳可以調整此教材的上下順序"
+                  >
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div className="text-gray-400 cursor-grab active:cursor-grabbing shrink-0 p-1 hover:text-indigo-500 rounded hover:bg-gray-50 transition-colors">
+                        <GripVertical size={18} />
+                      </div>
+                      <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold shrink-0">{m.unit}</div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-bold text-gray-900 truncate">{m.title}</h4>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">
+                          {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => handleEdit(m)} className="text-indigo-500 hover:bg-indigo-50 p-2 rounded-lg transition-colors" title="編輯"><Edit2 size={18}/></button>
+                      <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="刪除"><Trash size={18}/></button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleEdit(m)} className="text-indigo-500 hover:bg-indigo-50 p-2 rounded-lg"><Edit2 size={18}/></button>
-                    <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash size={18}/></button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -529,17 +620,101 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
   const [activeMat, setActiveMat] = useState<CourseMaterial | null>(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [progressData, setProgressData] = useState<Record<string, MaterialProgress>>({});
+  const [notesText, setNotesText] = useState('');
+  const [fontSize, setFontSize] = useState<number>(16);
 
+  // 1. 監聽教材進度 (監聽符合 userId 與 subjectId 的 material_progress)
+  useEffect(() => {
+    if (!user?.uid || !subjectId) return;
+    const q = query(
+      collection(db, 'material_progress'),
+      where('userId', '==', user.uid),
+      where('subjectId', '==', subjectId)
+    );
+    const unsub = onSnapshot(q, snap => {
+      const data: Record<string, MaterialProgress> = {};
+      snap.docs.forEach(doc => {
+        const d = doc.data() as MaterialProgress;
+        data[d.materialId] = { ...d, id: doc.id };
+      });
+      setProgressData(data);
+    });
+    return unsub;
+  }, [subjectId, user?.uid]);
+
+  // 2. 當切換教材時，載入對應教材的個人筆記
+  useEffect(() => {
+    if (activeMat) {
+      setNotesText(progressData[activeMat.id!]?.notes || '');
+    }
+  }, [activeMat?.id, progressData]);
+
+  // 3. 監聽教材列表
   useEffect(() => {
     const q = query(collection(db, 'materials'), where('subjectId', '==', subjectId));
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as CourseMaterial));
-      data.sort((a, b) => a.unit - b.unit);
+      data.sort((a, b) => {
+        if (a.unit !== b.unit) return a.unit - b.unit;
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0);
+      });
       setMaterials(data);
       if (data.length > 0 && !activeMat) setActiveMat(data[0]);
     });
     return unsub;
   }, [subjectId]);
+
+  // 儲存進度、筆記與完成狀態的核心方法
+  const saveProgress = async (matId: string, data: Partial<MaterialProgress>) => {
+    if (!user?.uid || !subjectId) return;
+    const existing = progressData[matId];
+    
+    // 檢查筆記長度以觸發隱藏成就 "notes_expert"
+    if (data.notes && data.notes.length > 10000 && !(user.badges || []).includes('notes_expert')) {
+      const newBadges = [...(user.badges || []), 'notes_expert'];
+      await updateDoc(doc(db, 'users', user.uid), { badges: newBadges });
+      toast("🏆 獲得隱藏成就：筆記達人！");
+    }
+
+    try {
+      const isFirstTimeComplete = !existing?.completed && data.completed;
+
+      if (existing?.id) {
+        await updateDoc(doc(db, 'material_progress', existing.id), {
+          ...data,
+          lastUpdated: Date.now()
+        });
+      } else {
+        await addDoc(collection(db, 'material_progress'), {
+          userId: user.uid,
+          materialId: matId,
+          subjectId: subjectId,
+          completed: false,
+          timeSpent: 0,
+          notes: '',
+          highlights: [],
+          ...data,
+          lastUpdated: Date.now()
+        });
+      }
+
+      if (isFirstTimeComplete) {
+        // 完成教材贈送 50 XP！
+        const userRef = doc(db, 'users', user.uid);
+        const newPoints = (user.points || 0) + 50;
+        await updateDoc(userRef, { points: newPoints });
+        toast("🎉 恭喜完成教材！獲得 50 XP 獎勵！");
+      } else if (data.notes !== undefined) {
+        toast("📝 筆記儲存成功！");
+      } else {
+        toast("✅ 狀態更新成功！");
+      }
+    } catch (e) {
+      console.error("Save progress error:", e);
+      toast("❌ 儲存失敗，請稍後再試");
+    }
+  };
 
   const toggleTTS = () => {
     if (isPlayingTTS) {
@@ -579,7 +754,6 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     return url;
   };
 
-
   const groupedMaterials = materials.reduce((acc, curr) => {
     const unit = curr.unit || 1;
     if (!acc[unit]) acc[unit] = [];
@@ -597,6 +771,39 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
           
           <h2 className="text-4xl font-black text-gray-900 mb-2">{activeMat.title}</h2>
           {activeMat.description && <p className="text-gray-500 mb-8 text-lg">{activeMat.description}</p>}
+
+          {/* 全螢幕控制條 */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              {/* 字體大小調整 */}
+              <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-100 text-xs">
+                <span className="text-gray-500 px-2 font-bold">字體大小</span>
+                <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors font-bold text-gray-700">
+                  A-
+                </button>
+                <span className="font-mono font-bold text-gray-700 px-1">{fontSize}px</span>
+                <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors font-bold text-gray-700">
+                  A+
+                </button>
+              </div>
+            </div>
+
+            {/* 完成教材按鈕 */}
+            <button 
+              onClick={() => saveProgress(activeMat.id!, { completed: !progressData[activeMat.id!]?.completed })} 
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm ${
+                progressData[activeMat.id!]?.completed 
+                  ? 'bg-green-50 border border-green-200 text-green-600 hover:bg-green-100' 
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md transform hover:-translate-y-0.5'
+              }`}
+            >
+              {progressData[activeMat.id!]?.completed ? (
+                <><CheckCircle size={18} className="text-green-600" /> 已完成此教材</>
+              ) : (
+                '我已完成這份教材'
+              )}
+            </button>
+          </div>
 
           {(activeMat.type === 'video' || activeMat.contentUrl) && (
             <div className="aspect-video bg-black rounded-3xl overflow-hidden mb-12 shadow-2xl">
@@ -617,7 +824,10 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
               <button onClick={toggleTTS} className="absolute -top-16 right-0 bg-indigo-50 text-indigo-600 px-5 py-2.5 rounded-full font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors shadow-sm">
                 {isPlayingTTS ? <><VolumeX size={18}/> 停止朗讀</> : <><Volume2 size={18}/> 語音朗讀</>}
               </button>
-              <div className="prose prose-lg prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700">
+              <div 
+                className="prose prose-lg prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700"
+                style={{ fontSize: `${fontSize}px`, lineHeight: '1.75' }}
+              >
                 <Markdown>{activeMat.markdownNotes}</Markdown>
               </div>
             </div>
@@ -638,6 +848,27 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
               </div>
             </div>
           )}
+
+          {/* 全螢幕下的個人筆記區塊 */}
+          <div className="mt-16 pt-10 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Edit2 size={20} className="text-indigo-500"/> 個人筆記 📝
+              </h3>
+              <button 
+                onClick={() => saveProgress(activeMat.id!, { notes: notesText })} 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+              >
+                <Send size={14}/> 儲存個人筆記
+              </button>
+            </div>
+            <textarea 
+              value={notesText} 
+              onChange={e => setNotesText(e.target.value)} 
+              className="w-full h-48 p-5 border border-gray-200 rounded-3xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50/50 text-gray-800 placeholder-gray-400 transition-all text-base leading-relaxed shadow-inner"
+              placeholder="在此記錄您的個人學習重點、筆記、或是遇到的問題... 點擊儲存筆記即可永久儲存至您的個人帳戶中！"
+            />
+          </div>
         </div>
       </div>,
       document.body
@@ -653,19 +884,48 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
           <div key={unit} className="mb-6">
             <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">Unit {unit}</h3>
             <div className="space-y-3">
-              {mats.map(m => (
-                <button key={m.id} onClick={() => { setActiveMat(m); window.speechSynthesis.cancel(); setIsPlayingTTS(false); }} className={`w-full text-left p-4 rounded-xl border transition-all ${activeMat?.id === m.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-[1.02]' : 'bg-white border-gray-100 text-gray-700 hover:border-indigo-200 hover:shadow-md'}`}>
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${activeMat?.id === m.id ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
-                      {m.unit}
+              {mats.map(m => {
+                const isCompleted = progressData[m.id!]?.completed || false;
+                return (
+                  <button 
+                    key={m.id} 
+                    onClick={() => { setActiveMat(m); window.speechSynthesis.cancel(); setIsPlayingTTS(false); }} 
+                    className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between ${
+                      activeMat?.id === m.id 
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-[1.02]' 
+                        : isCompleted
+                          ? 'bg-green-50/50 border-green-200 text-gray-700 hover:border-green-300 hover:shadow-md'
+                          : 'bg-white border-gray-100 text-gray-700 hover:border-indigo-200 hover:shadow-md'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${
+                        activeMat?.id === m.id 
+                          ? 'bg-white/20 text-white' 
+                          : isCompleted
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-indigo-50 text-indigo-600'
+                      }`}>
+                        {isCompleted ? <CheckCircle size={20} /> : m.unit}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold truncate text-sm">{m.title}</div>
+                        <div className={`text-xs mt-1 uppercase tracking-wider ${
+                          activeMat?.id === m.id ? 'text-indigo-100' : isCompleted ? 'text-green-600' : 'text-gray-400'
+                        }`}>
+                          {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold line-clamp-1 text-sm">{m.title}</div>
-                      <div className={`text-xs mt-1 uppercase tracking-wider ${activeMat?.id === m.id ? 'text-indigo-100' : 'text-gray-400'}`}>{m.type}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
+                    {isCompleted && (
+                      <CheckCircle 
+                        size={18} 
+                        className={`shrink-0 ml-2 ${activeMat?.id === m.id ? 'text-white' : 'text-green-500'}`} 
+                      />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -678,8 +938,41 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
               <Layout size={20}/>
             </button>
             <h2 className="text-3xl font-bold text-gray-900 mb-2 pr-16">{activeMat.title}</h2>
-            {activeMat.description && <p className="text-gray-500 mb-8">{activeMat.description}</p>}
+            {activeMat.description && <p className="text-gray-500 mb-4">{activeMat.description}</p>}
             
+            {/* 普通模式控制條 */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                {/* 字體大小調整 */}
+                <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-100 text-xs">
+                  <span className="text-gray-500 px-2 font-bold">字體大小</span>
+                  <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors font-bold text-gray-700" title="縮小字體">
+                    A-
+                  </button>
+                  <span className="font-mono font-bold text-gray-700 px-1">{fontSize}px</span>
+                  <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors font-bold text-gray-700" title="放大字體">
+                    A+
+                  </button>
+                </div>
+              </div>
+
+              {/* 完成教材按鈕 */}
+              <button 
+                onClick={() => saveProgress(activeMat.id!, { completed: !progressData[activeMat.id!]?.completed })} 
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm ${
+                  progressData[activeMat.id!]?.completed 
+                    ? 'bg-green-50 border border-green-200 text-green-600 hover:bg-green-100' 
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md transform hover:-translate-y-0.5'
+                }`}
+              >
+                {progressData[activeMat.id!]?.completed ? (
+                  <><CheckCircle size={18} className="text-green-600" /> 已完成此教材</>
+                ) : (
+                  '我已完成這份教材'
+                )}
+              </button>
+            </div>
+
             {(activeMat.type === 'video' || activeMat.contentUrl) && (
               <div className="aspect-video bg-black rounded-2xl overflow-hidden mb-8 shadow-inner mt-6">
                 {(() => {
@@ -693,12 +986,16 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
                 })()}
               </div>
             )}
+            
             {activeMat.markdownNotes && (
               <div className="relative mt-12">
                 <button onClick={toggleTTS} className="absolute -top-12 right-0 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
                   {isPlayingTTS ? <><VolumeX size={18}/> 停止朗讀</> : <><Volume2 size={18}/> 語音朗讀</>}
                 </button>
-                <div className="prose prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 bg-gray-50/50 p-8 rounded-2xl border border-gray-100">
+                <div 
+                  className="prose prose-indigo max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 bg-gray-50/50 p-8 rounded-2xl border border-gray-100"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: '1.75' }}
+                >
                   <Markdown>{activeMat.markdownNotes}</Markdown>
                 </div>
               </div>
@@ -719,6 +1016,27 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
                 </div>
               </div>
             )}
+
+            {/* 個人筆記區塊 */}
+            <div className="mt-12 pt-10 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Edit2 size={18} className="text-indigo-500"/> 個人筆記 📝
+                </h3>
+                <button 
+                  onClick={() => saveProgress(activeMat.id!, { notes: notesText })} 
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-1.5"
+                >
+                  <Send size={14}/> 儲存筆記
+                </button>
+              </div>
+              <textarea 
+                value={notesText} 
+                onChange={e => setNotesText(e.target.value)} 
+                className="w-full h-44 p-4 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50/30 text-gray-800 placeholder-gray-400 transition-all text-sm leading-relaxed"
+                placeholder="在此記錄您的個人學習重點、筆記、或是遇到的問題... 點擊儲存筆記即可永久儲存至您的個人帳戶中！"
+              />
+            </div>
             
             {!activeMat.contentUrl && !activeMat.markdownNotes && (!activeMat.attachments || activeMat.attachments.length === 0) && (
               <div className="text-center py-20 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 mt-6">
