@@ -371,63 +371,71 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
 
       {showForm && (
         <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-3">
               <label className="text-sm font-bold text-gray-700">類型</label>
-              <select value={newMat.type} onChange={e => setNewMat({...newMat, type: e.target.value as any})} className="w-full border border-gray-200 rounded-xl p-3">
+              <select value={newMat.type} onChange={e => setNewMat({...newMat, type: e.target.value as any})} className="w-full border border-gray-200 rounded-xl p-3 bg-white mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="lesson">課程講義</option>
                 <option value="exam">考卷</option>
                 <option value="solution">考卷解答</option>
                 <option value="video">影音</option>
               </select>
             </div>
-            <div>
+            <div className="md:col-span-2">
               <label className="text-sm font-bold text-gray-700">單元</label>
-              <input type="number" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: Number(e.target.value)})} className="w-full border border-gray-200 rounded-xl p-3"/>
+              <input type="number" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: Number(e.target.value)})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+            </div>
+            <div className="md:col-span-7">
+              <label className="text-sm font-bold text-gray-700">標題</label>
+              <input value={newMat.title} onChange={e => setNewMat({...newMat, title: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：第一單元 基礎觀念"/>
             </div>
           </div>
-          <div>
-            <label className="text-sm font-bold text-gray-700">標題</label>
-            <input value={newMat.title} onChange={e => setNewMat({...newMat, title: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3" placeholder="例如：第一單元 基礎觀念"/>
+          
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-8">
+              <label className="text-sm font-bold text-gray-700">內容連結 (影片URL或檔案連結)</label>
+              <input value={newMat.contentUrl} onChange={e => setNewMat({...newMat, contentUrl: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://youtube.com/..."/>
+            </div>
+            <div className="md:col-span-4">
+              <label className="text-sm font-bold text-gray-700">簡短說明</label>
+              <input value={newMat.description || ''} onChange={e => setNewMat({...newMat, description: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="選填：章節摘要..."/>
+            </div>
           </div>
-                    <div>
-            <label className="text-sm font-bold text-gray-700">內容連結 (影片URL或檔案連結)</label>
-            <input value={newMat.contentUrl} onChange={e => setNewMat({...newMat, contentUrl: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3" placeholder="https://youtube.com/..."/>
-          </div>
-          <div>
-            <label className="text-sm font-bold text-gray-700">簡短說明</label>
-            <input value={newMat.description || ''} onChange={e => setNewMat({...newMat, description: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3" placeholder="選填：章節摘要..."/>
-          </div>
+
           <div>
             <label className="text-sm font-bold text-gray-700">補充檔案連結</label>
-            {newMat.attachments?.map((att, i) => (
-              <div key={i} className="flex gap-2 mb-2">
-                <input value={att.name} onChange={e => {
-                  const newAtts = [...(newMat.attachments || [])];
-                  newAtts[i].name = e.target.value;
-                  setNewMat({...newMat, attachments: newAtts});
-                }} className="border border-gray-200 rounded-xl p-2 w-1/3" placeholder="檔案名稱" />
-                <input value={att.url} onChange={e => {
-                  const newAtts = [...(newMat.attachments || [])];
-                  newAtts[i].url = e.target.value;
-                  setNewMat({...newMat, attachments: newAtts});
-                }} className="border border-gray-200 rounded-xl p-2 flex-grow" placeholder="https://..." />
-                <button onClick={() => {
-                  const newAtts = [...(newMat.attachments || [])];
-                  newAtts.splice(i, 1);
-                  setNewMat({...newMat, attachments: newAtts});
-                }} className="text-red-500 p-2"><Trash size={18}/></button>
-              </div>
-            ))}
+            <div className="mt-2 space-y-2">
+              {newMat.attachments?.map((att, i) => (
+                <div key={i} className="flex gap-2">
+                  <input value={att.name} onChange={e => {
+                    const newAtts = [...(newMat.attachments || [])];
+                    newAtts[i].name = e.target.value;
+                    setNewMat({...newMat, attachments: newAtts});
+                  }} className="border border-gray-200 rounded-xl p-3 w-1/3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="檔案名稱" />
+                  <input value={att.url} onChange={e => {
+                    const newAtts = [...(newMat.attachments || [])];
+                    newAtts[i].url = e.target.value;
+                    setNewMat({...newMat, attachments: newAtts});
+                  }} className="border border-gray-200 rounded-xl p-3 flex-grow bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://..." />
+                  <button onClick={() => {
+                    const newAtts = [...(newMat.attachments || [])];
+                    newAtts.splice(i, 1);
+                    setNewMat({...newMat, attachments: newAtts});
+                  }} className="text-red-500 hover:bg-red-50 p-3 rounded-xl transition-colors"><Trash size={18}/></button>
+                </div>
+              ))}
+            </div>
             <button onClick={() => {
               setNewMat({...newMat, attachments: [...(newMat.attachments || []), {name: '', url: ''}]});
-            }} className="text-sm text-indigo-600 font-bold mt-1">+ 新增補充檔案</button>
+            }} className="text-sm text-indigo-600 font-bold mt-2 hover:text-indigo-800 flex items-center gap-1">
+              <Plus size={16}/> 新增補充檔案
+            </button>
           </div>
           <div>
             <label className="text-sm font-bold text-gray-700">Markdown 課程筆記</label>
-            <textarea value={newMat.markdownNotes} onChange={e => setNewMat({...newMat, markdownNotes: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 h-32" placeholder="支援 Markdown 語法..."/>
+            <textarea value={newMat.markdownNotes} onChange={e => setNewMat({...newMat, markdownNotes: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 h-32 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="支援 Markdown 語法..."/>
           </div>
-          <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold w-full hover:bg-indigo-700">{editingId ? '更新教材' : '儲存教材'}</button>
+          <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold w-full hover:bg-indigo-700 transition-colors shadow-md mt-2">{editingId ? '更新教材' : '儲存教材'}</button>
         </div>
       )}
 
@@ -547,16 +555,24 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     }
   };
 
+  const getAbsoluteUrl = (url: string) => {
+    if (!url) return '';
+    let cleanUrl = url.trim();
+    if (!/^https?:\/\//i.test(cleanUrl)) {
+      cleanUrl = 'https://' + cleanUrl;
+    }
+    return cleanUrl;
+  };
+
   const getYoutubeEmbedUrl = (url: string) => {
     try {
-      if (url.includes('youtube.com/watch')) {
-        const urlObj = new URL(url);
-        const v = urlObj.searchParams.get('v');
-        if (v) return `https://www.youtube.com/embed/${v}`;
-      } else if (url.includes('youtu.be/')) {
-        const v = url.split('youtu.be/')[1].split('?')[0];
-        if (v) return `https://www.youtube.com/embed/${v}`;
+      const absoluteUrl = getAbsoluteUrl(url);
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
+      const match = absoluteUrl.match(regExp);
+      if (match && match[2].length === 11) {
+        return `https://www.youtube.com/embed/${match[2]}`;
       }
+      return absoluteUrl;
     } catch (e) {
       // Ignore
     }
@@ -584,11 +600,15 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
 
           {(activeMat.type === 'video' || activeMat.contentUrl) && (
             <div className="aspect-video bg-black rounded-3xl overflow-hidden mb-12 shadow-2xl">
-              {activeMat.contentUrl?.includes('youtube.com') || activeMat.contentUrl?.includes('youtu.be') ? (
-                <iframe src={getYoutubeEmbedUrl(activeMat.contentUrl)} className="w-full h-full border-0" allowFullScreen></iframe>
-              ) : activeMat.contentUrl ? (
-                <video src={activeMat.contentUrl} controls className="w-full h-full"></video>
-              ) : null}
+              {(() => {
+                const absUrl = getAbsoluteUrl(activeMat.contentUrl || '');
+                if (absUrl.includes('youtube.com') || absUrl.includes('youtu.be') || absUrl.includes('youtube-nocookie.com')) {
+                  return <iframe src={getYoutubeEmbedUrl(activeMat.contentUrl || '')} className="w-full h-full border-0" allowFullScreen></iframe>;
+                } else if (absUrl) {
+                  return <video src={absUrl} controls className="w-full h-full"></video>;
+                }
+                return null;
+              })()}
             </div>
           )}
 
@@ -662,11 +682,15 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
             
             {(activeMat.type === 'video' || activeMat.contentUrl) && (
               <div className="aspect-video bg-black rounded-2xl overflow-hidden mb-8 shadow-inner mt-6">
-                {activeMat.contentUrl?.includes('youtube.com') || activeMat.contentUrl?.includes('youtu.be') ? (
-                  <iframe src={getYoutubeEmbedUrl(activeMat.contentUrl)} className="w-full h-full border-0" allowFullScreen></iframe>
-                ) : activeMat.contentUrl ? (
-                  <video src={activeMat.contentUrl} controls className="w-full h-full"></video>
-                ) : null}
+                {(() => {
+                  const absUrl = getAbsoluteUrl(activeMat.contentUrl || '');
+                  if (absUrl.includes('youtube.com') || absUrl.includes('youtu.be') || absUrl.includes('youtube-nocookie.com')) {
+                    return <iframe src={getYoutubeEmbedUrl(activeMat.contentUrl || '')} className="w-full h-full border-0" allowFullScreen></iframe>;
+                  } else if (absUrl) {
+                    return <video src={absUrl} controls className="w-full h-full"></video>;
+                  }
+                  return null;
+                })()}
               </div>
             )}
             {activeMat.markdownNotes && (
