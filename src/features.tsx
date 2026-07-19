@@ -307,6 +307,12 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   const [newMat, setNewMat] = useState<Partial<CourseMaterial>>({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  
+  const [viewMode, setViewMode] = useState<'materials' | 'progress'>('materials');
+  const [progressRecords, setProgressRecords] = useState<MaterialProgress[]>([]);
+  const [students, setStudents] = useState<UserProfile[]>([]);
+  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
+  const [progressGroupMode, setProgressGroupMode] = useState<'student' | 'material'>('student');
 
   const fetchMaterials = async () => {
     const q = query(collection(db, 'materials'), where('subjectId', '==', subjectId));
@@ -320,6 +326,30 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   };
 
   useEffect(() => { fetchMaterials(); }, [subjectId]);
+
+  useEffect(() => {
+    if (viewMode === 'progress') {
+      const fetchProg = async () => {
+        try {
+          const q = query(collection(db, 'material_progress'), where('subjectId', '==', subjectId));
+          const snap = await getDocs(q);
+          setProgressRecords(snap.docs.map(d => d.data() as MaterialProgress));
+          
+          const qUsers = query(collection(db, 'users'));
+          const snapUsers = await getDocs(qUsers);
+          const usersList = snapUsers.docs.map(d => d.data() as UserProfile);
+          setStudents(usersList);
+          
+          if (usersList.length > 0 && !activeStudentId) {
+            setActiveStudentId(usersList[0].uid);
+          }
+        } catch (error) {
+          console.error("Fetch progress error: ", error);
+        }
+      };
+      fetchProg();
+    }
+  }, [viewMode, subjectId]);
 
   const handleEdit = (m: CourseMaterial) => {
     setNewMat(m);
@@ -419,143 +449,412 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
     return acc;
   }, {} as Record<number, CourseMaterial[]>);
 
+  const formatTimeSpent = (seconds: number) => {
+    if (!seconds || seconds <= 0) return '未閱讀 (0s)';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m === 0) {
+      return `${s} 秒`;
+    }
+    return `${m} 分 ${s} 秒`;
+  };
+
   return (
     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="font-bold text-2xl text-gray-900">課程教材管理</h2>
-        <button onClick={() => {
-          if (showForm) {
-            setShowForm(false);
-            setEditingId(null);
-            setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
-          } else {
-            setShowForm(true);
-          }
-        }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-2">
-          {showForm ? '取消' : <><Upload size={18}/> 新增教材</>}
-        </button>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
+        <div>
+          <h2 className="font-bold text-2xl text-gray-900">課程教材管理</h2>
+          <p className="text-sm text-gray-500 mt-1">在這裡您可以管理教材順序，並查看學生學習歷程。</p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button 
+            onClick={() => setViewMode(viewMode === 'materials' ? 'progress' : 'materials')} 
+            className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
+              viewMode === 'progress' 
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100' 
+                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {viewMode === 'materials' ? '📊 查看學生學習進度' : '✏️ 返回教材編輯'}
+          </button>
+          {viewMode === 'materials' && (
+            <button onClick={() => {
+              if (showForm) {
+                setShowForm(false);
+                setEditingId(null);
+                setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
+              } else {
+                setShowForm(true);
+              }
+            }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-2 text-sm font-bold shadow-sm transition-all">
+              {showForm ? '取消' : <><Upload size={18}/> 新增教材</>}
+            </button>
+          )}
+        </div>
       </div>
 
-      {showForm && (
-        <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            <div className="md:col-span-3">
-              <label className="text-sm font-bold text-gray-700">類型</label>
-              <select value={newMat.type} onChange={e => setNewMat({...newMat, type: e.target.value as any})} className="w-full border border-gray-200 rounded-xl p-3 bg-white mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="lesson">課程講義</option>
-                <option value="exam">考卷</option>
-                <option value="solution">考卷解答</option>
-                <option value="video">影音</option>
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-sm font-bold text-gray-700">單元</label>
-              <input type="number" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: Number(e.target.value)})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
-            </div>
-            <div className="md:col-span-7">
-              <label className="text-sm font-bold text-gray-700">標題</label>
-              <input value={newMat.title} onChange={e => setNewMat({...newMat, title: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：第一單元 基礎觀念"/>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            <div className="md:col-span-8">
-              <label className="text-sm font-bold text-gray-700">內容連結 (影片URL或檔案連結)</label>
-              <input value={newMat.contentUrl} onChange={e => setNewMat({...newMat, contentUrl: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://youtube.com/..."/>
-            </div>
-            <div className="md:col-span-4">
-              <label className="text-sm font-bold text-gray-700">簡短說明</label>
-              <input value={newMat.description || ''} onChange={e => setNewMat({...newMat, description: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="選填：章節摘要..."/>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-bold text-gray-700">補充檔案連結</label>
-            <div className="mt-2 space-y-2">
-              {newMat.attachments?.map((att, i) => (
-                <div key={i} className="flex gap-2">
-                  <input value={att.name} onChange={e => {
-                    const newAtts = [...(newMat.attachments || [])];
-                    newAtts[i].name = e.target.value;
-                    setNewMat({...newMat, attachments: newAtts});
-                  }} className="border border-gray-200 rounded-xl p-3 w-1/3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="檔案名稱" />
-                  <input value={att.url} onChange={e => {
-                    const newAtts = [...(newMat.attachments || [])];
-                    newAtts[i].url = e.target.value;
-                    setNewMat({...newMat, attachments: newAtts});
-                  }} className="border border-gray-200 rounded-xl p-3 flex-grow bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://..." />
-                  <button onClick={() => {
-                    const newAtts = [...(newMat.attachments || [])];
-                    newAtts.splice(i, 1);
-                    setNewMat({...newMat, attachments: newAtts});
-                  }} className="text-red-500 hover:bg-red-50 p-3 rounded-xl transition-colors"><Trash size={18}/></button>
+      {viewMode === 'materials' && (
+        <>
+          {showForm && (
+            <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-3">
+                  <label className="text-sm font-bold text-gray-700">類型</label>
+                  <select value={newMat.type} onChange={e => setNewMat({...newMat, type: e.target.value as any})} className="w-full border border-gray-200 rounded-xl p-3 bg-white mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="lesson">課程講義</option>
+                    <option value="exam">考卷</option>
+                    <option value="solution">考卷解答</option>
+                    <option value="video">影音</option>
+                  </select>
                 </div>
-              ))}
+                <div className="md:col-span-2">
+                  <label className="text-sm font-bold text-gray-700">單元</label>
+                  <input type="number" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: Number(e.target.value)})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <div className="md:col-span-7">
+                  <label className="text-sm font-bold text-gray-700">標題</label>
+                  <input value={newMat.title} onChange={e => setNewMat({...newMat, title: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：第一單元 基礎觀念"/>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-8">
+                  <label className="text-sm font-bold text-gray-700">內容連結 (影片URL或檔案連結)</label>
+                  <input value={newMat.contentUrl} onChange={e => setNewMat({...newMat, contentUrl: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://youtube.com/..."/>
+                </div>
+                <div className="md:col-span-4">
+                  <label className="text-sm font-bold text-gray-700">簡短說明</label>
+                  <input value={newMat.description || ''} onChange={e => setNewMat({...newMat, description: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="選填：章節摘要..."/>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-gray-700">補充檔案連結</label>
+                <div className="mt-2 space-y-2">
+                  {newMat.attachments?.map((att, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input value={att.name} onChange={e => {
+                        const newAtts = [...(newMat.attachments || [])];
+                        newAtts[i].name = e.target.value;
+                        setNewMat({...newMat, attachments: newAtts});
+                      }} className="border border-gray-200 rounded-xl p-3 w-1/3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="檔案名稱" />
+                      <input value={att.url} onChange={e => {
+                        const newAtts = [...(newMat.attachments || [])];
+                        newAtts[i].url = e.target.value;
+                        setNewMat({...newMat, attachments: newAtts});
+                      }} className="border border-gray-200 rounded-xl p-3 flex-grow bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://..." />
+                      <button onClick={() => {
+                        const newAtts = [...(newMat.attachments || [])];
+                        newAtts.splice(i, 1);
+                        setNewMat({...newMat, attachments: newAtts});
+                      }} className="text-red-500 hover:bg-red-50 p-3 rounded-xl transition-colors"><Trash size={18}/></button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => {
+                  setNewMat({...newMat, attachments: [...(newMat.attachments || []), {name: '', url: ''}]});
+                }} className="text-sm text-indigo-600 font-bold mt-2 hover:text-indigo-800 flex items-center gap-1">
+                  <Plus size={16}/> 新增補充檔案
+                </button>
+              </div>
+              <div>
+                <label className="text-sm font-bold text-gray-700">Markdown 課程筆記</label>
+                <textarea value={newMat.markdownNotes} onChange={e => setNewMat({...newMat, markdownNotes: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 h-32 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="支援 Markdown 語法..."/>
+              </div>
+              <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold w-full hover:bg-indigo-700 transition-colors shadow-md mt-2">{editingId ? '更新教材' : '儲存教材'}</button>
             </div>
-            <button onClick={() => {
-              setNewMat({...newMat, attachments: [...(newMat.attachments || []), {name: '', url: ''}]});
-            }} className="text-sm text-indigo-600 font-bold mt-2 hover:text-indigo-800 flex items-center gap-1">
-              <Plus size={16}/> 新增補充檔案
-            </button>
+          )}
+
+          <div className="space-y-4">
+            {Object.entries(groupedMaterials).map(([unit, mats]) => (
+              <div key={unit} className="mb-8">
+                <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Unit {unit}</h3>
+                <div className="space-y-3">
+                  {mats.map(m => {
+                    const isBeingDragged = draggedId === m.id;
+                    const isDragOver = dragOverId === m.id;
+                    return (
+                      <div 
+                        key={m.id} 
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, m.id!)}
+                        onDragOver={(e) => handleDragOver(e, m.id!)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, m.id!)}
+                        className={`flex justify-between items-center p-4 border rounded-xl transition-all duration-200 select-none ${
+                          isBeingDragged 
+                            ? 'opacity-40 border-dashed border-indigo-300 bg-indigo-50/30 cursor-grabbing' 
+                            : isDragOver
+                              ? 'border-indigo-500 bg-indigo-50/40 scale-[1.01] shadow-md cursor-grabbing'
+                              : 'border-gray-100 hover:border-indigo-200 hover:shadow-sm bg-white cursor-grab'
+                        }`}
+                        title="按住並拖曳可以調整此教材的上下順序"
+                      >
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                          <div className="text-gray-400 cursor-grab active:cursor-grabbing shrink-0 p-1 hover:text-indigo-500 rounded hover:bg-gray-50 transition-colors">
+                            <GripVertical size={18} />
+                          </div>
+                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold shrink-0">{m.unit}</div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-gray-900 truncate">{m.title}</h4>
+                            <span className="text-xs text-gray-500 uppercase tracking-wide">
+                              {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button onClick={() => handleEdit(m)} className="text-indigo-500 hover:bg-indigo-50 p-2 rounded-lg transition-colors" title="編輯"><Edit2 size={18}/></button>
+                          <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="刪除"><Trash size={18}/></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="text-sm font-bold text-gray-700">Markdown 課程筆記</label>
-            <textarea value={newMat.markdownNotes} onChange={e => setNewMat({...newMat, markdownNotes: e.target.value})} className="w-full border border-gray-200 rounded-xl p-3 h-32 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="支援 Markdown 語法..."/>
-          </div>
-          <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold w-full hover:bg-indigo-700 transition-colors shadow-md mt-2">{editingId ? '更新教材' : '儲存教材'}</button>
-        </div>
+        </>
       )}
 
-      <div className="space-y-4">
-        
-        {Object.entries(groupedMaterials).map(([unit, mats]) => (
-          <div key={unit} className="mb-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Unit {unit}</h3>
-            <div className="space-y-3">
-              {mats.map(m => {
-                const isBeingDragged = draggedId === m.id;
-                const isDragOver = dragOverId === m.id;
-                return (
-                  <div 
-                    key={m.id} 
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, m.id!)}
-                    onDragOver={(e) => handleDragOver(e, m.id!)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, m.id!)}
-                    className={`flex justify-between items-center p-4 border rounded-xl transition-all duration-200 select-none ${
-                      isBeingDragged 
-                        ? 'opacity-40 border-dashed border-indigo-300 bg-indigo-50/30 cursor-grabbing' 
-                        : isDragOver
-                          ? 'border-indigo-500 bg-indigo-50/40 scale-[1.01] shadow-md cursor-grabbing'
-                          : 'border-gray-100 hover:border-indigo-200 hover:shadow-sm bg-white cursor-grab'
-                    }`}
-                    title="按住並拖曳可以調整此教材的上下順序"
-                  >
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                      <div className="text-gray-400 cursor-grab active:cursor-grabbing shrink-0 p-1 hover:text-indigo-500 rounded hover:bg-gray-50 transition-colors">
-                        <GripVertical size={18} />
+      {viewMode === 'progress' && (
+        <div className="space-y-6">
+          {/* 切換統計維度 */}
+          <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100 max-w-sm">
+            <button
+              onClick={() => setProgressGroupMode('student')}
+              className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all ${
+                progressGroupMode === 'student'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              👤 依學生檢視
+            </button>
+            <button
+              onClick={() => setProgressGroupMode('material')}
+              className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all ${
+                progressGroupMode === 'material'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              📖 依教材檢視
+            </button>
+          </div>
+
+          {progressGroupMode === 'student' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* 左側學生名單 */}
+              <div className="lg:col-span-4 border border-gray-100 rounded-3xl p-4 bg-gray-50/50 space-y-2 max-h-[500px] overflow-y-auto">
+                <h3 className="text-sm font-bold text-gray-500 px-2 mb-3">學生名單 ({students.length})</h3>
+                {students.map(s => {
+                  const sRecords = progressRecords.filter(p => p.userId === s.uid);
+                  const completedCount = sRecords.filter(r => r.completed).length;
+                  const totalCount = materials.length;
+                  
+                  return (
+                    <button
+                      key={s.uid}
+                      onClick={() => setActiveStudentId(s.uid)}
+                      className={`w-full flex items-center justify-between p-3.5 rounded-2xl transition-all text-left border ${
+                        activeStudentId === s.uid
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                          : 'bg-white border-gray-100 text-gray-700 hover:border-indigo-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                          activeStudentId === s.uid ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'
+                        }`}>
+                          {s.displayName ? s.displayName[0] : 'U'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-sm line-clamp-1">{s.displayName || '未命名學生'}</div>
+                          <div className={`text-xs mt-0.5 ${activeStudentId === s.uid ? 'text-indigo-100' : 'text-gray-400'}`}>
+                            🏆 {s.points || 0} XP
+                          </div>
+                        </div>
                       </div>
-                      <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold shrink-0">{m.unit}</div>
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-gray-900 truncate">{m.title}</h4>
-                        <span className="text-xs text-gray-500 uppercase tracking-wide">
+                      <div className={`text-xs font-bold px-2 py-1 rounded-full shrink-0 ${
+                        activeStudentId === s.uid ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        進度: {completedCount}/{totalCount}
+                      </div>
+                    </button>
+                  );
+                })}
+                {students.length === 0 && (
+                  <p className="text-center text-sm text-gray-400 py-6">無學生資料</p>
+                )}
+              </div>
+
+              {/* 右側該學生詳細教材學習資料 */}
+              <div className="lg:col-span-8 border border-gray-100 rounded-3xl p-6 bg-white shadow-sm space-y-6">
+                {(() => {
+                  const currentStudent = students.find(s => s.uid === activeStudentId);
+                  if (!currentStudent) {
+                    return <div className="text-center text-gray-400 py-12">請從左側選擇一位學生以檢視詳情</div>;
+                  }
+
+                  const studentProgress = progressRecords.filter(p => p.userId === currentStudent.uid);
+
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                            <span>{currentStudent.displayName}</span> 的學習歷程
+                          </h3>
+                          <p className="text-xs text-gray-400 mt-1">
+                            最後更新時間：
+                            {studentProgress.length > 0 
+                              ? new Date(Math.max(...studentProgress.map(p => p.lastUpdated))).toLocaleString() 
+                              : '無紀錄'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full">
+                            完成率： {Math.round((studentProgress.filter(p => p.completed).length / (materials.length || 1)) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {materials.map(m => {
+                          const record = studentProgress.find(p => p.materialId === m.id);
+                          return (
+                            <div key={m.id} className="p-4 border border-gray-100 rounded-2xl hover:bg-gray-50/50 transition-colors">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-xs bg-gray-100 text-gray-600 font-bold px-2 py-0.5 rounded shrink-0">Unit {m.unit}</span>
+                                  <span className="font-bold text-gray-800 text-sm truncate" title={m.title}>{m.title}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {record?.completed ? (
+                                    <span className="bg-green-50 text-green-700 border border-green-100 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                                      <CheckCircle size={12}/> 已完成
+                                    </span>
+                                  ) : (
+                                    <span className="bg-gray-50 text-gray-400 border border-gray-100 text-xs font-semibold px-2.5 py-1 rounded-full">
+                                      未完成
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-gray-500 mt-3 bg-gray-50/50 p-3 rounded-xl">
+                                <div>
+                                  <span className="font-semibold text-gray-400 mr-1">停留時間:</span>
+                                  <span className="font-mono font-bold text-gray-700">{formatTimeSpent(record?.timeSpent || 0)}</span>
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-gray-400 mr-1">類型:</span>
+                                  <span className="font-bold text-gray-600 uppercase tracking-wide">
+                                    {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {record?.notes ? (
+                                <div className="mt-3 p-3 bg-amber-50/60 border border-amber-100/80 rounded-xl relative">
+                                  <div className="text-[10px] text-amber-600 font-bold mb-1">📝 學生筆記：</div>
+                                  <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{record.notes}</p>
+                                </div>
+                              ) : (
+                                <div className="mt-3 p-3 bg-gray-50/30 border border-dashed border-gray-100 rounded-xl text-center">
+                                  <p className="text-[11px] text-gray-400">目前無個人筆記</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {materials.length === 0 && (
+                          <p className="text-center text-sm text-gray-400 py-12">此科目尚未上傳任何教材</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            /* 依教材檢視 */
+            <div className="space-y-4">
+              {materials.map(m => {
+                const matRecords = progressRecords.filter(p => p.materialId === m.id);
+                return (
+                  <div key={m.id} className="border border-gray-100 rounded-3xl p-5 bg-white shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-50 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs bg-indigo-50 text-indigo-600 font-bold px-2 py-0.5 rounded">Unit {m.unit}</span>
+                          <h3 className="font-bold text-gray-900">{m.title}</h3>
+                        </div>
+                        <span className="text-[11px] text-gray-400 uppercase tracking-wider block mt-1">
                           {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
                         </span>
                       </div>
+                      <div className="flex gap-4 text-xs text-gray-500 shrink-0">
+                        <div>
+                          已完成學生數: <span className="font-bold text-green-600">{matRecords.filter(r => r.completed).length} 人</span>
+                        </div>
+                        <div>
+                          總研讀次數: <span className="font-bold text-gray-700">{matRecords.length} 人次</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={() => handleEdit(m)} className="text-indigo-500 hover:bg-indigo-50 p-2 rounded-lg transition-colors" title="編輯"><Edit2 size={18}/></button>
-                      <button onClick={() => handleDelete(m.id!)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="刪除"><Trash size={18}/></button>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-gray-100 text-gray-400 font-bold">
+                            <th className="pb-2">學生姓名</th>
+                            <th className="pb-2">狀態</th>
+                            <th className="pb-2">停留時間</th>
+                            <th className="pb-2">筆記內容</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {students.map(s => {
+                            const r = matRecords.find(record => record.userId === s.uid);
+                            return (
+                              <tr key={s.uid} className="border-b border-gray-50/50 last:border-0">
+                                <td className="py-2.5 font-bold text-gray-800">{s.displayName || '未命名學生'}</td>
+                                <td className="py-2.5">
+                                  {r?.completed ? (
+                                    <span className="text-green-600 font-bold flex items-center gap-0.5"><CheckCircle size={12}/> 已完成</span>
+                                  ) : r ? (
+                                    <span className="text-amber-600 font-semibold">研讀中</span>
+                                  ) : (
+                                    <span className="text-gray-300">未開始</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 font-mono text-gray-600">{formatTimeSpent(r?.timeSpent || 0)}</td>
+                                <td className="py-2.5 max-w-md">
+                                  {r?.notes ? (
+                                    <div className="bg-amber-50/40 p-2 rounded border border-amber-100/60 text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap" title={r.notes}>
+                                      {r.notes}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-300 italic">無</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 );
               })}
+              {materials.length === 0 && (
+                <p className="text-center text-sm text-gray-400 py-12">此科目尚未上傳任何教材</p>
+              )}
             </div>
-          </div>
-        ))}
-
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -666,7 +965,7 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
   }, [subjectId]);
 
   // 儲存進度、筆記與完成狀態的核心方法
-  const saveProgress = async (matId: string, data: Partial<MaterialProgress>) => {
+  const saveProgress = async (matId: string, data: Partial<MaterialProgress>, silent = false) => {
     if (!user?.uid || !subjectId) return;
     const existing = progressData[matId];
     
@@ -674,7 +973,7 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     if (data.notes && data.notes.length > 10000 && !(user.badges || []).includes('notes_expert')) {
       const newBadges = [...(user.badges || []), 'notes_expert'];
       await updateDoc(doc(db, 'users', user.uid), { badges: newBadges });
-      toast("🏆 獲得隱藏成就：筆記達人！");
+      if (!silent) toast("🏆 獲得隱藏成就：筆記達人！");
     }
 
     try {
@@ -704,17 +1003,64 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
         const userRef = doc(db, 'users', user.uid);
         const newPoints = (user.points || 0) + 50;
         await updateDoc(userRef, { points: newPoints });
-        toast("🎉 恭喜完成教材！獲得 50 XP 獎勵！");
+        if (!silent) toast("🎉 恭喜完成教材！獲得 50 XP 獎勵！");
       } else if (data.notes !== undefined) {
-        toast("📝 筆記儲存成功！");
+        if (!silent) toast("📝 筆記儲存成功！");
       } else {
-        toast("✅ 狀態更新成功！");
+        if (!silent) toast("✅ 狀態更新成功！");
       }
     } catch (e) {
       console.error("Save progress error:", e);
-      toast("❌ 儲存失敗，請稍後再試");
+      if (!silent) toast("❌ 儲存失敗，請稍後再試");
     }
   };
+
+  // 4. 教材停留時間統計
+  const timeRef = useRef<number>(0);
+  const activeMatRef = useRef<string | null>(null);
+  const latestProgressDataRef = useRef<Record<string, MaterialProgress>>({});
+
+  useEffect(() => {
+    latestProgressDataRef.current = progressData;
+  }, [progressData]);
+
+  useEffect(() => {
+    if (!activeMat?.id || !user?.uid) return;
+    
+    activeMatRef.current = activeMat.id;
+    timeRef.current = 0;
+
+    // 定期同步秒數到資料庫的函數
+    const syncTimeSpent = async () => {
+      const currentMatId = activeMatRef.current;
+      const secondsToSave = timeRef.current;
+      if (!currentMatId || secondsToSave <= 0) return;
+
+      const existingProg = latestProgressDataRef.current[currentMatId];
+      const previousTimeSpent = existingProg?.timeSpent || 0;
+      const newTotal = previousTimeSpent + secondsToSave;
+
+      // 重置當前計時
+      timeRef.current = 0;
+
+      // 靜默儲存
+      await saveProgress(currentMatId, { timeSpent: newTotal }, true);
+    };
+
+    const interval = setInterval(() => {
+      timeRef.current += 1;
+      // 每 15 秒自動跟資料庫同步一次，避免斷電或關閉網頁失去太多記錄
+      if (timeRef.current >= 15) {
+        syncTimeSpent();
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      // 當切換教材或 unmount 時，做最後一次同步
+      syncTimeSpent();
+    };
+  }, [activeMat?.id, user?.uid]);
 
   const toggleTTS = () => {
     if (isPlayingTTS) {
