@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import { pinyin } from 'pinyin-pro';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import html2pdf from 'html2pdf.js';
+import { ParticleEngine } from './ParticleEngine';
 import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile } from './features';
 
 
